@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多候选人择偶匹配系统</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+  h1 { text-align: center; }
+  .container { max-width: 1000px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+  .section { margin-bottom: 20px; }
+  label { display: block; margin-top: 10px; }
+  input[type=number], input[type=text], select { width: 100%; padding: 5px; margin-top: 5px; }
+  button { margin-top: 15px; padding: 10px 15px; font-size: 16px; cursor: pointer; }
+  .candidate { border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 8px; }
+  .result { margin-top: 20px; padding: 15px; background: #eef; border-radius: 8px; }
+  canvas { max-width: 100%; }
+</style>
+</head>
+<body>
+  <h1>多候选人择偶匹配系统</h1>
+  <div class="container">
+
+    <!-- 权重设置 -->
+    <div class="section">
+      <h2>匹配设置</h2>
+      <label>硬性条件权重 <input type="number" id="hardWeight" value="50" min="0" max="100"></label>
+      <label>软性条件权重 <input type="number" id="softWeight" value="50" min="0" max="100"></label>
+    </div>
+
+    <!-- 用户兴趣维度 -->
+    <div class="section">
+      <h2>兴趣维度</h2>
+      <div id="hobbyList">
+        <label>兴趣1 <input type="text" value="运动" class="hobbyName"></label>
+        <label>兴趣2 <input type="text" value="阅读" class="hobbyName"></label>
+        <label>兴趣3 <input type="text" value="旅行" class="hobbyName"></label>
+      </div>
+      <button onclick="addHobby()">添加兴趣维度</button>
+    </div>
+
+    <!-- 男方信息 -->
+    <div class="section">
+      <h2>男方信息</h2>
+      <label>年龄 <input type="number" id="maleAge" value="30"></label>
+      <label>身高 (cm) <input type="number" id="maleHeight" value="175"></label>
+      <div id="maleHobbies"></div>
+    </div>
+
+    <!-- 女方候选人列表 -->
+    <div class="section">
+      <h2>女方候选人列表</h2>
+      <div id="femaleList"></div>
+      <button onclick="addFemale()">添加候选人</button>
+    </div>
+
+    <button onclick="calculateAll()">计算所有匹配度</button>
+
+    <div class="result" id="result"></div>
+    <canvas id="radarChart"></canvas>
+  </div>
+
+<script>
+let hobbies = ["运动","阅读","旅行"];
+let femaleCandidates = [];
+
+function renderHobbies() {
+  const maleHobbiesDiv = document.getElementById("maleHobbies");
+  maleHobbiesDiv.innerHTML = '';
+  hobbies.forEach((hobby,index)=>{
+    maleHobbiesDiv.innerHTML += `<label>${hobby}评分 <input type="number" id="maleHobby${index}" value="3" min="0" max="5"></label>`;
+  });
+
+  femaleCandidates.forEach((candidate,index)=>{
+    const div = document.getElementById(`femaleHobbies${index}`);
+    div.innerHTML = '';
+    hobbies.forEach((hobby,i)=>{
+      div.innerHTML += `<label>${hobby}评分 <input type="number" id="female${index}Hobby${i}" value="3" min="0" max="5"></label>`;
+    });
+  });
+}
+
+function addHobby() {
+  const newHobby = prompt("请输入新兴趣维度名称");
+  if(newHobby) {
+    hobbies.push(newHobby);
+    renderHobbies();
+    const hobbyListDiv = document.getElementById("hobbyList");
+    hobbyListDiv.innerHTML += `<label>兴趣${hobbies.length} <input type="text" value="${newHobby}" class="hobbyName"></label>`;
+  }
+}
+
+function addFemale() {
+  const name = prompt("请输入候选人姓名");
+  if(!name) return;
+  const div = document.createElement("div");
+  div.className = "candidate";
+  div.id = `female${femaleCandidates.length}`;
+  div.innerHTML = `<strong>${name}</strong>
+                   <label>年龄 <input type="number" id="female${femaleCandidates.length}Age" value="28"></label>
+                   <label>身高 (cm) <input type="number" id="female${femaleCandidates.length}Height" value="165"></label>
+                   <div id="femaleHobbies${femaleCandidates.length}"></div>`;
+  document.getElementById("femaleList").appendChild(div);
+  femaleCandidates.push(name);
+  renderHobbies();
+}
+
+function calculateAll() {
+  const hardWeight = parseInt(document.getElementById('hardWeight').value)/100;
+  const softWeight = parseInt(document.getElementById('softWeight').value)/100;
+
+  const male = {
+    age: parseInt(document.getElementById('maleAge').value),
+    height: parseInt(document.getElementById('maleHeight').value),
+    hobbies: hobbies.map((_,i)=>parseInt(document.getElementById(`maleHobby${i}`).value))
+  };
+
+  let results = [];
+
+  femaleCandidates.forEach((name,index)=>{
+    const female = {
+      age: parseInt(document.getElementById(`female${index}Age`).value),
+      height: parseInt(document.getElementById(`female${index}Height`).value),
+      hobbies: hobbies.map((_,i)=>parseInt(document.getElementById(`female${index}Hobby${i}`).value))
+    };
+
+    const ageDiff = Math.abs(male.age - female.age);
+    const heightDiff = Math.abs(male.height - female.height);
+    const hardScore = Math.max(0,100 - ageDiff*2 - heightDiff);
+
+    const softScores = male.hobbies.map((score,i)=>1 - Math.abs(score - female.hobbies[i])/5);
+    const softScore = softScores.reduce((a,b)=>a+b,0)/softScores.length*100;
+
+    const matchScore = Math.round(hardScore*hardWeight + softScore*softWeight);
+
+    const differences = [];
+    if(male.age!==female.age) differences.push(`年龄差异：${ageDiff}岁`);
+    if(male.height!==female.height) differences.push(`身高差异：${heightDiff}cm`);
+    hobbies.forEach((h,i)=>{
+      if(male.hobbies[i]!==female.hobbies[i]) differences.push(`${h}兴趣差异：男方${male.hobbies[i]} / 女方${female.hobbies[i]}`);
+    });
+
+    const suggestions = [];
+    hobbies.forEach((h,i)=>{
+      if(male.hobbies[i]<female.hobbies[i]) suggestions.push(`男方可尝试提升 ${h} 兴趣`);
+      else if(male.hobbies[i]>female.hobbies[i]) suggestions.push(`女方可尝试提升 ${h} 兴趣`);
+    });
+    if(male.age>female.age) suggestions.push("年龄差较大，可关注生活节奏协调");
+    if(male.height<female.height) suggestions.push("身高差较大，可在拍照/活动中注意");
+
+    results.push({name,matchScore,differences,suggestions,softScores,hardScore});
+  });
+
+  // 排序
+  results.sort((a,b)=>b.matchScore-a.matchScore);
+
+  let html = "<h3>匹配结果（按匹配度排序）</h3>";
+  results.forEach(r=>{
+    html += `<strong>${r.name} - 匹配度：${r.matchScore}/100</strong><br>
+             差异分析：<br>${r.differences.join('<br>')}<br>
+             改进建议：<br>${r.suggestions.join('<br>')}<br><hr>`;
+  });
+  document.getElementById("result").innerHTML = html;
+
+  // 绘制雷达图对比（仅显示前3个候选人）
+  const topCandidates = results.slice(0,3);
+  const datasets = topCandidates.map(r=>({
+    label: r.name,
+    data: [r.hardScore, ...r.softScores.map(s=>Math.round(s*100))],
+    fill: true,
+    backgroundColor: `rgba(${Math.floor(Math.random()*200)}, ${Math.floor(Math.random()*200)}, ${Math.floor(Math.random()*200)},0.2)`,
+    borderColor: `rgba(${Math.floor(Math.random()*200)}, ${Math.floor(Math.random()*200)}, ${Math.floor(Math.random()*200)},1)`,
+    pointBackgroundColor: 'rgba(54, 162, 235, 1)'
+  }));
+
+  const radarData = {
+    labels: ['年龄/身高匹配',...hobbies],
+    datasets
+  };
+
+  const config = {type:'radar',data:radarData,options:{scales:{r:{min:0,max:100}}}};
+
+  if(window.radarChartInstance) window.radarChartInstance.destroy();
+  const ctx = document.getElementById("radarChart").getContext("2d");
+  window.radarChartInstance = new Chart(ctx,config);
+}
+
+// 初始渲染男方兴趣
+renderHobbies();
+</script>
+</body>
+</html>

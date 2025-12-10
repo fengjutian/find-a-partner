@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>择偶条件匹配系统（升级版）</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+  h1 { text-align: center; }
+  .container { max-width: 900px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+  .section { margin-bottom: 20px; }
+  label { display: block; margin-top: 10px; }
+  input[type=number], select { width: 100%; padding: 5px; margin-top: 5px; }
+  button { margin-top: 15px; padding: 10px 15px; font-size: 16px; cursor: pointer; }
+  .result { margin-top: 20px; padding: 15px; background: #eef; border-radius: 8px; }
+  canvas { max-width: 100%; }
+</style>
+</head>
+<body>
+  <h1>择偶条件匹配系统（升级版）</h1>
+  <div class="container">
+    <div class="section">
+      <h2>匹配设置</h2>
+      <label>硬性条件权重 <input type="number" id="hardWeight" value="50" min="0" max="100"></label>
+      <label>软性条件权重 <input type="number" id="softWeight" value="50" min="0" max="100"></label>
+    </div>
+
+    <div class="section">
+      <h2>男方信息</h2>
+      <label>年龄 <input type="number" id="maleAge" value="30"></label>
+      <label>身高 (cm) <input type="number" id="maleHeight" value="175"></label>
+      <label>兴趣爱好评分 (0~5)</label>
+      <label>运动 <input type="number" id="maleHobbySports" value="3" min="0" max="5"></label>
+      <label>阅读 <input type="number" id="maleHobbyReading" value="4" min="0" max="5"></label>
+      <label>旅行 <input type="number" id="maleHobbyTravel" value="2" min="0" max="5"></label>
+    </div>
+
+    <div class="section">
+      <h2>女方信息</h2>
+      <label>年龄 <input type="number" id="femaleAge" value="28"></label>
+      <label>身高 (cm) <input type="number" id="femaleHeight" value="165"></label>
+      <label>兴趣爱好评分 (0~5)</label>
+      <label>运动 <input type="number" id="femaleHobbySports" value="4" min="0" max="5"></label>
+      <label>阅读 <input type="number" id="femaleHobbyReading" value="3" min="0" max="5"></label>
+      <label>旅行 <input type="number" id="femaleHobbyTravel" value="3" min="0" max="5"></label>
+    </div>
+
+    <button onclick="calculateMatch()">计算匹配度</button>
+
+    <div class="result" id="result"></div>
+    <canvas id="radarChart"></canvas>
+  </div>
+
+<script>
+function calculateMatch() {
+  // 获取权重
+  const hardWeight = parseInt(document.getElementById('hardWeight').value)/100;
+  const softWeight = parseInt(document.getElementById('softWeight').value)/100;
+
+  // 获取男方信息
+  const male = {
+    age: parseInt(document.getElementById('maleAge').value),
+    height: parseInt(document.getElementById('maleHeight').value),
+    hobbies: {
+      sports: parseInt(document.getElementById('maleHobbySports').value),
+      reading: parseInt(document.getElementById('maleHobbyReading').value),
+      travel: parseInt(document.getElementById('maleHobbyTravel').value)
+    }
+  };
+
+  // 获取女方信息
+  const female = {
+    age: parseInt(document.getElementById('femaleAge').value),
+    height: parseInt(document.getElementById('femaleHeight').value),
+    hobbies: {
+      sports: parseInt(document.getElementById('femaleHobbySports').value),
+      reading: parseInt(document.getElementById('femaleHobbyReading').value),
+      travel: parseInt(document.getElementById('femaleHobbyTravel').value)
+    }
+  };
+
+  // 硬性条件匹配 (年龄差、身高差)
+  const ageDiff = Math.abs(male.age - female.age);
+  const heightDiff = Math.abs(male.height - female.height);
+  const hardScore = Math.max(0, 100 - ageDiff*2 - heightDiff);
+
+  // 软性条件匹配 (兴趣)
+  const hobbyKeys = Object.keys(male.hobbies);
+  const softScores = hobbyKeys.map(key => 1 - Math.abs(male.hobbies[key] - female.hobbies[key])/5);
+  const softScore = softScores.reduce((a,b)=>a+b,0)/softScores.length * 100;
+
+  // 总匹配度
+  const matchScore = Math.round(hardScore*hardWeight + softScore*softWeight);
+
+  // 差异分析
+  const differences = [];
+  if (male.age !== female.age) differences.push(`年龄差异：${Math.abs(male.age - female.age)}岁`);
+  if (male.height !== female.height) differences.push(`身高差异：${Math.abs(male.height - female.height)}cm`);
+  hobbyKeys.forEach(key=>{
+    if (male.hobbies[key] !== female.hobbies[key])
+      differences.push(`${key}兴趣差异：男方${male.hobbies[key]} / 女方${female.hobbies[key]}`);
+  });
+
+  // 改进建议
+  const suggestions = [];
+  hobbyKeys.forEach(key=>{
+    if (male.hobbies[key] < female.hobbies[key])
+      suggestions.push(`男方可以尝试提升 ${key} 兴趣，增进匹配度`);
+    else if (male.hobbies[key] > female.hobbies[key])
+      suggestions.push(`女方可以尝试提升 ${key} 兴趣，增进匹配度`);
+  });
+  if (male.age > female.age) suggestions.push("年龄差较大，可关注生活节奏协调");
+  if (male.height < female.height) suggestions.push("身高差较大，可在拍照/活动中注意");
+
+  // 输出结果
+  document.getElementById('result').innerHTML = `
+    <h3>总匹配度：${matchScore} / 100</h3>
+    <strong>差异分析：</strong><br>${differences.join('<br>')}
+    <br><strong>改进建议：</strong><br>${suggestions.join('<br>')}
+  `;
+
+  // 绘制雷达图
+  const radarData = {
+    labels: ['年龄','身高', ...hobbyKeys],
+    datasets: [{
+      label: '匹配度分布',
+      data: [100 - ageDiff*2, 100 - heightDiff, ...softScores.map(s=>Math.round(s*100))],
+      fill: true,
+      backgroundColor: 'rgba(54, 162, 235, 0.2)',
+      borderColor: 'rgba(54, 162, 235, 1)',
+      pointBackgroundColor: 'rgba(54, 162, 235, 1)',
+    }]
+  };
+
+  const config = {
+    type: 'radar',
+    data: radarData,
+    options: {
+      scales: {
+        r: { min: 0, max: 100 }
+      }
+    }
+  };
+
+  // 销毁旧图表再绘制
+  if(window.radarChartInstance) window.radarChartInstance.destroy();
+  const ctx = document.getElementById('radarChart').getContext('2d');
+  window.radarChartInstance = new Chart(ctx, config);
+}
+</script>
+</body>
+</html>

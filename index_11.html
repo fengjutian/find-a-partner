@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多候选人择偶匹配系统（持久化+推荐+导出）</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+  h1 { text-align: center; }
+  .container { max-width: 1000px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+  .section { margin-bottom: 20px; }
+  label { display: block; margin-top: 10px; }
+  input[type=number], input[type=text], select { width: 100%; padding: 5px; margin-top: 5px; }
+  button { margin-top: 15px; padding: 10px 15px; font-size: 16px; cursor: pointer; }
+  .candidate { border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 8px; }
+  .result { margin-top: 20px; padding: 15px; background: #eef; border-radius: 8px; }
+  canvas { max-width: 100%; }
+</style>
+</head>
+<body>
+<h1>多候选人择偶匹配系统</h1>
+<div class="container">
+
+<div class="section">
+  <h2>匹配设置</h2>
+  <label>硬性条件权重 <input type="number" id="hardWeight" value="50" min="0" max="100"></label>
+  <label>软性条件权重 <input type="number" id="softWeight" value="50" min="0" max="100"></label>
+</div>
+
+<div class="section">
+  <h2>兴趣维度</h2>
+  <div id="hobbyList"></div>
+  <button onclick="addHobby()">添加兴趣维度</button>
+</div>
+
+<div class="section">
+  <h2>男方信息</h2>
+  <label>年龄 <input type="number" id="maleAge"></label>
+  <label>身高 (cm) <input type="number" id="maleHeight"></label>
+  <div id="maleHobbies"></div>
+</div>
+
+<div class="section">
+  <h2>女方候选人列表</h2>
+  <div id="femaleList"></div>
+  <button onclick="addFemale()">添加候选人</button>
+</div>
+
+<button onclick="calculateAll()">计算匹配度</button>
+<button onclick="exportPDF()">导出匹配报告 PDF</button>
+
+<div class="result" id="result"></div>
+<canvas id="radarChart"></canvas>
+
+</div>
+
+<script>
+let hobbies = JSON.parse(localStorage.getItem("hobbies")) || ["运动","阅读","旅行"];
+let femaleCandidates = JSON.parse(localStorage.getItem("femaleCandidates")) || [];
+let maleInfo = JSON.parse(localStorage.getItem("maleInfo")) || {age:30,height:175,hobbies: hobbies.map(()=>3)};
+renderHobbyList();
+renderMaleHobbies();
+renderFemaleCandidates();
+
+// ---------- 兴趣维度 ----------
+function renderHobbyList() {
+  const hobbyListDiv = document.getElementById("hobbyList");
+  hobbyListDiv.innerHTML = '';
+  hobbies.forEach((hobby,i)=>{
+    hobbyListDiv.innerHTML += `<label>兴趣${i+1} <input type="text" value="${hobby}" onchange="updateHobby(${i},this.value)"></label>`;
+  });
+}
+function updateHobby(index,value){
+  hobbies[index] = value;
+  localStorage.setItem("hobbies", JSON.stringify(hobbies));
+  renderMaleHobbies();
+  renderFemaleCandidates();
+}
+function addHobby(){
+  const newHobby = prompt("请输入新兴趣维度名称");
+  if(newHobby){
+    hobbies.push(newHobby);
+    localStorage.setItem("hobbies", JSON.stringify(hobbies));
+    renderHobbyList();
+    renderMaleHobbies();
+    renderFemaleCandidates();
+  }
+}
+
+// ---------- 男方 ----------
+function renderMaleHobbies(){
+  const maleHobbiesDiv = document.getElementById("maleHobbies");
+  maleHobbiesDiv.innerHTML = '';
+  hobbies.forEach((hobby,i)=>{
+    const val = maleInfo.hobbies[i] || 3;
+    maleHobbiesDiv.innerHTML += `<label>${hobby}评分 <input type="number" id="maleHobby${i}" value="${val}" min="0" max="5" onchange="updateMaleHobby(${i},this.value)"></label>`;
+  });
+}
+function updateMaleHobby(index,value){
+  maleInfo.hobbies[index] = parseInt(value);
+  localStorage.setItem("maleInfo", JSON.stringify(maleInfo));
+}
+document.getElementById("maleAge").value = maleInfo.age;
+document.getElementById("maleHeight").value = maleInfo.height;
+document.getElementById("maleAge").onchange = e=>{maleInfo.age=parseInt(e.target.value);localStorage.setItem("maleInfo", JSON.stringify(maleInfo))};
+document.getElementById("maleHeight").onchange = e=>{maleInfo.height=parseInt(e.target.value);localStorage.setItem("maleInfo", JSON.stringify(maleInfo))};
+
+// ---------- 女方 ----------
+function renderFemaleCandidates(){
+  const femaleListDiv = document.getElementById("femaleList");
+  femaleListDiv.innerHTML = '';
+  femaleCandidates.forEach((candidate,index)=>{
+    const div = document.createElement("div");
+    div.className = "candidate";
+    div.id = `female${index}`;
+    div.innerHTML = `<strong>${candidate.name}</strong>
+      <label>年龄 <input type="number" id="female${index}Age" value="${candidate.age}" onchange="updateFemale(${index},'age',this.value)"></label>
+      <label>身高 (cm) <input type="number" id="female${index}Height" value="${candidate.height}" onchange="updateFemale(${index},'height',this.value)"></label>
+      <div id="femaleHobbies${index}"></div>`;
+    femaleListDiv.appendChild(div);
+
+    const hobbyDiv = document.getElementById(`femaleHobbies${index}`);
+    hobbyDiv.innerHTML = '';
+    hobbies.forEach((hobby,i)=>{
+      const val = candidate.hobbies[i] || 3;
+      hobbyDiv.innerHTML += `<label>${hobby}评分 <input type="number" id="female${index}Hobby${i}" value="${val}" min="0" max="5" onchange="updateFemaleHobby(${index},${i},this.value)"></label>`;
+    });
+  });
+}
+function addFemale(){
+  const name = prompt("请输入候选人姓名");
+  if(!name) return;
+  const newCandidate = {name,age:28,height:165,hobbies:hobbies.map(()=>3)};
+  femaleCandidates.push(newCandidate);
+  localStorage.setItem("femaleCandidates", JSON.stringify(femaleCandidates));
+  renderFemaleCandidates();
+}
+function updateFemale(index,key,value){
+  femaleCandidates[index][key] = parseInt(value);
+  localStorage.setItem("femaleCandidates", JSON.stringify(femaleCandidates));
+}
+function updateFemaleHobby(fIndex,hIndex,value){
+  femaleCandidates[fIndex].hobbies[hIndex] = parseInt(value);
+  localStorage.setItem("femaleCandidates", JSON.stringify(femaleCandidates));
+}
+
+// ---------- 计算匹配 ----------
+function calculateAll(){
+  const hardWeight = parseInt(document.getElementById('hardWeight').value)/100;
+  const softWeight = parseInt(document.getElementById('softWeight').value)/100;
+
+  let results = [];
+  femaleCandidates.forEach((candidate)=>{
+    const ageDiff = Math.abs(maleInfo.age - candidate.age);
+    const heightDiff = Math.abs(maleInfo.height - candidate.height);
+    const hardScore = Math.max(0,100 - ageDiff*2 - heightDiff);
+    const softScores = maleInfo.hobbies.map((score,i)=>1 - Math.abs(score - candidate.hobbies[i])/5);
+    const softScore = softScores.reduce((a,b)=>a+b,0)/softScores.length*100;
+    const matchScore = Math.round(hardScore*hardWeight + softScore*softWeight);
+
+    const differences = [];
+    if(ageDiff>0) differences.push(`年龄差异：${ageDiff}岁`);
+    if(heightDiff>0) differences.push(`身高差异：${heightDiff}cm`);
+    hobbies.forEach((h,i)=>{if(maleInfo.hobbies[i]!==candidate.hobbies[i]) differences.push(`${h}兴趣差异：男方${maleInfo.hobbies[i]} / 女方${candidate.hobbies[i]}`)});
+
+    const suggestions = [];
+    hobbies.forEach((h,i)=>{
+      if(maleInfo.hobbies[i]<candidate.hobbies[i]) suggestions.push(`男方可提升 ${h}`);
+      else if(maleInfo.hobbies[i]>candidate.hobbies[i]) suggestions.push(`女方可提升 ${h}`);
+    });
+    if(maleInfo.age>candidate.age) suggestions.push("年龄差较大，可关注生活节奏");
+    if(maleInfo.height<candidate.height) suggestions.push("身高差较大，可注意活动");
+
+    results.push({name:candidate.name,matchScore,differences,suggestions,softScores,hardScore});
+  });
+
+  results.sort((a,b)=>b.matchScore-a.matchScore);
+
+  // 显示前3推荐
+  let html = "<h3>匹配结果（按匹配度排序）</h3>";
+  results.forEach(r=>{
+    html += `<strong>${r.name} - 匹配度：${r.matchScore}/100</strong><br>
+             差异分析：<br>${r.differences.join('<br>')}<br>
+             改进建议：<br>${r.suggestions.join('<br>')}<br><hr>`;
+  });
+  document.getElementById("result").innerHTML = html;
+
+  // 雷达图
+  const topCandidates = results.slice(0,3);
+  const datasets = topCandidates.map(r=>({
+    label: r.name,
+    data: [r.hardScore, ...r.softScores.map(s=>Math.round(s*100))],
+    fill:true,
+    backgroundColor:`rgba(${Math.floor(Math.random()*200)},${Math.floor(Math.random()*200)},${Math.floor(Math.random()*200)},0.2)`,
+    borderColor:`rgba(${Math.floor(Math.random()*200)},${Math.floor(Math.random()*200)},${Math.floor(Math.random()*200)},1)`,
+    pointBackgroundColor:'rgba(54,162,235,1)'
+  }));
+  const radarData = {labels:['年龄/身高匹配',...hobbies],datasets};
+  const config = {type:'radar',data:radarData,options:{scales:{r:{min:0,max:100}}}};
+  if(window.radarChartInstance) window.radarChartInstance.destroy();
+  const ctx = document.getElementById("radarChart").getContext("2d");
+  window.radarChartInstance = new Chart(ctx,config);
+}
+
+// ---------- 导出 PDF ----------
+async function exportPDF(){
+  calculateAll();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFontSize(16);
+  doc.text("择偶匹配报告", 105, 15, null, null, "center");
+  let y = 25;
+  const htmlContent = document.getElementById("result").innerHTML.replace(/<br>/g,"\n").replace(/<[^>]+>/g,'');
+  htmlContent.split("\n").forEach(line=>{
+    doc.text(line, 10, y);
+    y += 7;
+  });
+  doc.save("匹配报告.pdf");
+}
+</script>
+</body>
+</html>
