@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>双向择偶匹配仪表盘</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body { font-family: Arial; padding:20px; background:#f0f2f5; }
+h2,h3 { margin-top:20px; }
+table { border-collapse: collapse; width:100%; margin-top:10px; }
+th,td { border:1px solid #ccc; padding:8px; text-align:center; }
+th { background:#eee; }
+input { width:100px; }
+.weightSlider { width:150px; }
+.high { background:#90ee90; }
+.mid { background:#ffd700; }
+.low { background:#ff6347; }
+</style>
+</head>
+<body>
+
+<h2>双向择偶匹配仪表盘</h2>
+
+<h3>1. 输入双方信息</h3>
+<table>
+<tr><th></th><th>年龄</th><th>身高</th><th>城市+房产</th><th>性格</th><th>兴趣</th><th>婚史</th></tr>
+<tr>
+<td>A自身</td>
+<td><input type="number" id="a_age" value="1990"></td>
+<td><input type="number" id="a_height" value="170"></td>
+<td><input type="text" id="a_cityHouse" value="南京无房"></td>
+<td><input type="text" id="a_personality" value="外向,活泼"></td>
+<td><input type="text" id="a_interests" value="羽毛球,旅游"></td>
+<td><input type="text" id="a_marital" value="未婚"></td>
+</tr>
+<tr>
+<td>A期望</td>
+<td><input type="number" id="pa_age" value="1988"></td>
+<td><input type="number" id="pa_height" value="175"></td>
+<td><input type="text" id="pa_cityHouse" value="南京有房"></td>
+<td><input type="text" id="pa_personality" value="大方,包容"></td>
+<td><input type="text" id="pa_interests" value="羽毛球,旅游,悬疑电影"></td>
+<td><input type="text" id="pa_marital" value="未婚"></td>
+</tr>
+<tr>
+<td>B自身</td>
+<td><input type="number" id="b_age" value="1992"></td>
+<td><input type="number" id="b_height" value="178"></td>
+<td><input type="text" id="b_cityHouse" value="南京有房"></td>
+<td><input type="text" id="b_personality" value="大方,幽默"></td>
+<td><input type="text" id="b_interests" value="羽毛球,悬疑电影"></td>
+<td><input type="text" id="b_marital" value="未婚"></td>
+</tr>
+<tr>
+<td>B期望</td>
+<td><input type="number" id="pb_age" value="1989"></td>
+<td><input type="number" id="pb_height" value="165"></td>
+<td><input type="text" id="pb_cityHouse" value="南京无房"></td>
+<td><input type="text" id="pb_personality" value="外向,活泼"></td>
+<td><input type="text" id="pb_interests" value="旅游,羽毛球"></td>
+<td><input type="text" id="pb_marital" value="未婚"></td>
+</tr>
+</table>
+
+<h3>2. 条件权重调节</h3>
+<table>
+<tr><th>条件</th><th>权重</th></tr>
+<tr><td>年龄</td><td><input type="range" min="0" max="5" value="1" id="w_age" class="weightSlider"></td></tr>
+<tr><td>身高</td><td><input type="range" min="0" max="5" value="1" id="w_height" class="weightSlider"></td></tr>
+<tr><td>城市/房产</td><td><input type="range" min="0" max="5" value="1" id="w_cityHouse" class="weightSlider"></td></tr>
+<tr><td>性格</td><td><input type="range" min="0" max="5" value="1" id="w_personality" class="weightSlider"></td></tr>
+<tr><td>兴趣</td><td><input type="range" min="0" max="5" value="1" id="w_interests" class="weightSlider"></td></tr>
+<tr><td>婚史</td><td><input type="range" min="0" max="5" value="1" id="w_marital" class="weightSlider"></td></tr>
+</table>
+
+<button onclick="calculateMatch()">计算匹配值</button>
+
+<h3>3. 匹配结果雷达图</h3>
+<canvas id="radarChart" width="400" height="400"></canvas>
+
+<h3>4. 综合匹配趋势图</h3>
+<canvas id="trendChart" width="600" height="300"></canvas>
+
+<h3>5. 匹配差异与建议</h3>
+<table id="diffTable">
+<thead><tr><th>条件</th><th>A对B匹配</th><th>B对A匹配</th><th>综合匹配(%)</th><th>差异/建议</th></tr></thead>
+<tbody></tbody>
+<tfoot>
+<tr><td colspan="3">总匹配度</td><td id="totalScore">0</td><td></td></tr>
+</tfoot>
+</table>
+
+<script>
+const conditions=['age','height','cityHouse','personality','interests','marital'];
+let trendData=[]; 
+let radarChart=null;
+let trendChart=null;
+
+function keywordScore(targetStr, candStr){
+    const t=targetStr.split(',').map(s=>s.trim());
+    const c=candStr.split(',').map(s=>s.trim());
+    let match=0;
+    t.forEach(k=>{ if(c.includes(k)) match++; });
+    return t.length>0 ? match/t.length : 0;
+}
+
+function scoreColor(score){
+    if(score>0.7) return 'high';
+    if(score>0.4) return 'mid';
+    return 'low';
+}
+
+function getWeight(f){ return +document.getElementById('w_'+f).value; }
+
+function calculateConditionScore(val, target, type){
+    if(type==='age') return val>=target?1:0;
+    if(type==='height') return val>=target?1:val/target;
+    if(type==='cityHouse'){
+        const hasHouse=val.includes('有房');
+        return (val.includes(target.split('有')[0]) && hasHouse)?1:(val.includes(target.split('有')[0])?0.5:0);
+    }
+    return 0;
+}
+
+function calculateMatch(){
+    const A={age:+document.getElementById('a_age').value, height:+document.getElementById('a_height').value, cityHouse:document.getElementById('a_cityHouse').value, personality:document.getElementById('a_personality').value, interests:document.getElementById('a_interests').value, marital:document.getElementById('a_marital').value};
+    const PA={age:+document.getElementById('pa_age').value, height:+document.getElementById('pa_height').value, cityHouse:document.getElementById('pa_cityHouse').value, personality:document.getElementById('pa_personality').value, interests:document.getElementById('pa_interests').value, marital:document.getElementById('pa_marital').value};
+    const B={age:+document.getElementById('b_age').value, height:+document.getElementById('b_height').value, cityHouse:document.getElementById('b_cityHouse').value, personality:document.getElementById('b_personality').value, interests:document.getElementById('b_interests').value, marital:document.getElementById('b_marital').value};
+    const PB={age:+document.getElementById('pb_age').value, height:+document.getElementById('pb_height').value, cityHouse:document.getElementById('pb_cityHouse').value, personality:document.getElementById('pb_personality').value, interests:document.getElementById('pb_interests').value, marital:document.getElementById('pb_marital').value};
+
+    const tbody=document.querySelector('#diffTable tbody');
+    tbody.innerHTML='';
+    let totalScoreSum=0;
+    let radarLabels=[], radarA=[], radarB=[], radarC=[];
+
+    conditions.forEach(f=>{
+        let weight=getWeight(f);
+        let scoreA=0, scoreB=0, diff='';
+
+        if(f==='age' || f==='height' || f==='cityHouse'){
+            scoreA=calculateConditionScore(B[f], PA[f], f);
+            scoreB=calculateConditionScore(A[f], PB[f], f);
+            if(scoreA<1) diff+=`A期望:${PA[f]},B:${B[f]}. `;
+            if(scoreB<1) diff+=`B期望:${PB[f]},A:${A[f]}. `;
+        } else {
+            scoreA=keywordScore(PA[f], B[f]);
+            scoreB=keywordScore(PB[f], A[f]);
+            if(scoreA<1) diff+=`A期望:${PA[f]},B:${B[f]}. `;
+            if(scoreB<1) diff+=`B期望:${PB[f]},A:${A[f]}. `;
+        }
+
+        const combined=(scoreA*weight+scoreB*weight)/(2*weight);
+        totalScoreSum+=combined*weight;
+
+        radarLabels.push(f);
+        radarA.push(scoreA*100);
+        radarB.push(scoreB*100);
+        radarC.push(combined*100);
+
+        const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${f}</td>
+        <td class="${scoreColor(scoreA)}">${(scoreA*100).toFixed(1)}%</td>
+        <td class="${scoreColor(scoreB)}">${(scoreB*100).toFixed(1)}%</td>
+        <td class="${scoreColor(combined)}">${(combined*100).toFixed(1)}%</td>
+        <td>${diff}</td>`;
+        tbody.appendChild(tr);
+    });
+
+    const totalWeight=conditions.reduce((a,c)=>a+getWeight(c),0);
+    const totalScore=(totalScoreSum/totalWeight)*100;
+    document.getElementById('totalScore').innerText=totalScore.toFixed(1)+'%';
+
+    trendData.push(totalScore.toFixed(1));
+
+    // 雷达图
+    if(radarChart) radarChart.destroy();
+    const ctx=document.getElementById('radarChart').getContext('2d');
+    radarChart=new Chart(ctx,{
+        type:'radar',
+        data:{
+            labels:radarLabels,
+            datasets:[
+                {label:'A对B匹配', data:radarA, borderColor:'blue', fill:false},
+                {label:'B对A匹配', data:radarB, borderColor:'green', fill:false},
+                {label:'综合匹配', data:radarC, borderColor:'red', fill:false},
+            ]
+        },
+        options:{responsive:true, scales:{r:{beginAtZero:true, max:100}}}
+    });
+
+    // 趋势图
+    const ctx2=document.getElementById('trendChart').getContext('2d');
+    if(trendChart) trendChart.destroy();
+    trendChart=new Chart(ctx2,{
+        type:'line',
+        data:{
+            labels:trendData.map((v,i)=>i+1),
+            datasets:[{
+                label:'综合匹配度趋势',
+                data:trendData,
+                borderColor:'purple',
+                fill:false,
+                tension:0.2
+            }]
+        },
+        options:{
+            responsive:true,
+            scales:{
+                y:{beginAtZero:true, max:100},
+                x:{title:{display:true,text:'计算次数'}}
+            }
+        }
+    });
+}
+</script>
+
+</body>
+</html>

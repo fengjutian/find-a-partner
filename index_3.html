@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>择偶条件匹配系统</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<style>
+body { font-family: Arial; padding:20px; background:#f0f2f5; }
+h2,h3 { margin-top:20px; }
+input[type=number], input[type=text] { width:120px; margin-right:10px; }
+.slider-container{ margin-bottom:8px; color:#000; }
+#dashboard { display:flex; flex-wrap:wrap; gap:20px; margin-top:20px; }
+.card { border-radius:12px; padding:15px; width:320px; box-shadow:0 4px 8px rgba(0,0,0,0.1); text-align:center; transition:0.3s; color:#fff; cursor:grab; }
+.card h4{ margin:0 0 10px 0; }
+.card .score{ font-weight:bold; margin-bottom:10px; font-size:18px; }
+#trendChartContainer{ margin-top:40px; width:90%; }
+</style>
+</head>
+<body>
+
+<h2>择偶条件匹配系统</h2>
+
+<h3>1. 设置条件权重</h3>
+<div id="sliders"></div>
+
+<h3>2. 添加候选人</h3>
+<button onclick="addCandidate()">添加候选人</button>
+<table id="candidatesTable" style="display:none;"><tbody></tbody></table>
+
+<h3>3. 匹配度仪表盘</h3>
+<div id="dashboard"></div>
+
+<h3>4. 匹配度趋势图</h3>
+<div id="trendChartContainer">
+  <canvas id="trendChart"></canvas>
+</div>
+
+<h3>5. 模板管理</h3>
+<input type="text" id="templateName" placeholder="模板名称">
+<button onclick="saveTemplate()">保存模板</button>
+<select id="templateSelect" onchange="loadTemplate()">
+  <option value="">请选择模板</option>
+</select>
+<button onclick="deleteTemplate()">删除模板</button>
+
+<script>
+const dimensions=[
+  {name:'年龄',type:'number'},
+  {name:'身高',type:'number'},
+  {name:'城市+房产',type:'text'},
+  {name:'性格/价值观',type:'text'},
+  {name:'职业/学历',type:'text'},
+  {name:'兴趣',type:'interests'},
+  {name:'婚史',type:'text'}
+];
+
+const targetPerson={
+  age:1988, // 88年以后
+  height:175,
+  city:'南京',
+  hasHouse:true,
+  personality:'大方,包容心',
+  professionKeywords:'E人',
+  interests:'羽毛球,旅游,悬疑电影',
+  maritalStatus:'未婚'
+};
+
+// 硬条件
+const hardConditions = {
+  '年龄': {min:1988, factor:0.5},
+  '身高': {min:175, factor:0.5},
+  '城市+房产': {value:'南京', houseRequired:true, factor:0.5}
+};
+
+let charts=[], trendChart=null, trendData=[];
+
+function initSliders(){
+  const container=document.getElementById('sliders');
+  container.innerHTML='';
+  dimensions.forEach(dim=>{
+    const div=document.createElement('div');
+    div.className='slider-container';
+    div.innerHTML=`${dim.name} 权重: <span id="weight_${dim.name}_val">5</span>
+      <input type="range" min="0" max="10" value="5" id="weight_${dim.name}" oninput="updateDashboard()">`;
+    container.appendChild(div);
+  });
+}
+
+// 候选人管理
+function addCandidate(name='候选人'){
+  const tbody=document.querySelector("#candidatesTable tbody");
+  const row=document.createElement("tr");
+  row.innerHTML=`<td><input type="text" value="${name}" oninput="updateDashboard()"></td>`;
+  dimensions.forEach(dim=>{
+    let defaultVal=dim.type==='number'?5:'';
+    row.innerHTML+=`<td><input type="${dim.type==='number'?'number':'text'}" value="${defaultVal}" oninput="updateDashboard()"></td>`;
+  });
+  row.innerHTML+=`<td><button onclick="removeCandidate(this)">删除</button></td>`;
+  tbody.appendChild(row);
+  updateDashboard();
+}
+function removeCandidate(btn){ btn.closest("tr").remove(); updateDashboard(); }
+
+// 匹配度计算函数
+function scoreToColor(score){ const hue=Math.min(Math.max(score*1.2,0),120); return `hsl(${hue},70%,50%)`; }
+
+function interestScore(target, candidate){
+  const list1=target.split(',').map(s=>s.trim());
+  const list2=candidate.split(',').map(s=>s.trim());
+  let match=0;
+  list1.forEach(t=>{ list2.forEach(c=>{ if(c.includes(t)||t.includes(c)) match++; }); });
+  return Math.min(match/list1.length*10,10);
+}
+
+function personalityScore(target, candidate){
+  if(!target||!candidate) return 0;
+  const list1=target.split(',').map(s=>s.trim());
+  const list2=candidate.split(',').map(s=>s.trim());
+  let match=0;
+  list1.forEach(t=>{ list2.forEach(c=>{ if(c.includes(t)) match++; }); });
+  return Math.min(match/list1.length*10,10);
+}
+
+function calculateScores(candidate){
+  const scores={};
+  const ageVal=parseInt(candidate['年龄']||0);
+  scores['年龄']=(ageVal>=hardConditions['年龄'].min?10:0);
+  const heightVal=parseInt(candidate['身高']||0);
+  scores['身高']=(heightVal>=hardConditions['身高'].min?10:Math.max(0,10*heightVal/hardConditions['身高'].min));
+  const cityInfo=candidate['城市+房产']||'';
+  const hasHouse=cityInfo.includes('有房');
+  scores['城市+房产']=(cityInfo.includes('南京') && hasHouse?10:0);
+  scores['性格/价值观']=personalityScore(targetPerson.personality, candidate['性格/价值观']||'');
+  scores['职业/学历']=candidate['职业/学历'].includes('E')?10:5;
+  scores['兴趣']=interestScore(targetPerson.interests, candidate['兴趣']||'');
+  scores['婚史']=(candidate['婚史']==='未婚'?10:0);
+  return scores;
+}
+
+function calculateTotal(scores, candidate){
+  let total=0, weightSum=0;
+  dimensions.forEach(dim=>{
+    const w=parseFloat(document.getElementById(`weight_${dim.name}`).value);
+    document.getElementById(`weight_${dim.name}_val`).innerText=w;
+    total+=scores[dim.name]*w;
+    weightSum+=10*w;
+  });
+  let score=weightSum>0?(total/weightSum*100):0;
+
+  // 硬条件惩罚
+  if(candidate['年龄'] && parseInt(candidate['年龄'])<hardConditions['年龄'].min) score*=hardConditions['年龄'].factor;
+  if(candidate['身高'] && parseInt(candidate['身高'])<hardConditions['身高'].min) score*=hardConditions['身高'].factor;
+  if(candidate['城市+房产'] && (!candidate['城市+房产'].includes('南京') || !candidate['城市+房产'].includes('有房'))) score*=hardConditions['城市+房产'].factor;
+
+  return score;
+}
+
+// 仪表盘更新
+function updateDashboard(){
+  const rows=document.querySelectorAll("#candidatesTable tbody tr");
+  const candidates=[];
+  rows.forEach(row=>{
+    const candidate={name:row.cells[0].querySelector('input').value};
+    dimensions.forEach((dim,i)=>{ candidate[dim.name]=row.cells[i+1].querySelector('input').value; });
+    candidates.push(candidate);
+  });
+
+  const results=candidates.map(c=>{
+    const scores=calculateScores(c);
+    const total=calculateTotal(scores,c);
+    return {...c,scores,total};
+  });
+  results.sort((a,b)=>b.total-a.total);
+  trendData.push(results.map(r=>r.total));
+
+  const dashboard=document.getElementById('dashboard');
+  dashboard.innerHTML='';
+  charts.forEach(c=>c.destroy());
+  charts=[];
+
+  results.forEach(r=>{
+    const card=document.createElement('div');
+    card.className='card';
+    card.style.background=scoreToColor(r.total);
+    card.innerHTML=`<h4>${r.name}</h4><div class="score">匹配度: ${r.total.toFixed(1)}%</div><canvas></canvas>`;
+    dashboard.appendChild(card);
+
+    const ctx=card.querySelector('canvas').getContext('2d');
+    const chart=new Chart(ctx,{
+      type:'bar',
+      data:{ labels:dimensions.map(d=>d.name), datasets:[{label:'贡献分', data:dimensions.map(d=>r.scores[d.name]*parseFloat(document.getElementById(`weight_${d.name}`).value)), backgroundColor:'rgba(0,200,100,0.6)'}] },
+      options:{ responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+    });
+    charts.push(chart);
+  });
+
+  if(trendChart) trendChart.destroy();
+  const labels=trendData.map((_,i)=>`操作${i+1}`);
+  trendChart=new Chart(document.getElementById('trendChart').getContext('2d'),{
+    type:'line',
+    data:{ labels:labels, datasets:results.map((r,idx)=>({label:r.name,data:trendData.map(t=>t[idx]||0),borderColor:`hsl(${idx*50%360},70%,50%)`,fill:false})) },
+    options:{ responsive:true, plugins:{legend:{position:'top'}}, scales:{y:{beginAtZero:true, max:100}} }
+  });
+}
+
+// 模板管理
+function getTemplates(){ return JSON.parse(localStorage.getItem('matchTemplates')||'{}'); }
+function saveTemplate(){
+  const name=document.getElementById('templateName').value.trim();
+  if(!name) return alert('请输入模板名称');
+  const data={};
+  dimensions.forEach(dim=>{ data[dim.name]=parseFloat(document.getElementById(`weight_${dim.name}`).value); });
+  const templates=getTemplates();
+  templates[name]=data;
+  localStorage.setItem('matchTemplates',JSON.stringify(templates));
+  updateTemplateSelect();
+  alert('模板已保存');
+}
+function loadTemplate(){
+  const select=document.getElementById('templateSelect');
+  const name=select.value;
+  if(!name) return;
+  const templates=getTemplates();
+  const data=templates[name];
+  dimensions.forEach(dim=>{ document.getElementById(`weight_${dim.name}`).value=data[dim.name]; });
+  updateDashboard();
+}
+function deleteTemplate(){
+  const select=document.getElementById('templateSelect');
+  const name=select.value;
+  if(!name) return alert('请选择要删除的模板');
+  const templates=getTemplates();
+  delete templates[name];
+  localStorage.setItem('matchTemplates',JSON.stringify(templates));
+  updateTemplateSelect();
+  alert('模板已删除');
+}
+function updateTemplateSelect(){
+  const select=document.getElementById('templateSelect');
+  const templates=getTemplates();
+  select.innerHTML='<option value="">请选择模板</option>';
+  Object.keys(templates).forEach(name=>{
+    const option=document.createElement('option');
+    option.value=name;
+    option.textContent=name;
+    select.appendChild(option);
+  });
+}
+
+// 初始化
+initSliders();
+addCandidate('小红');
+addCandidate('小明');
+addCandidate('小丽');
+updateTemplateSelect();
+
+// 拖拽排序
+new Sortable(document.getElementById('dashboard'), {animation:150, onEnd:()=>{}});
+</script>
+</body>
+</html>

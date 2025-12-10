@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>择偶条件匹配表</title>
+<style>
+body { font-family: Arial; padding:20px; background:#f0f2f5; }
+table { border-collapse: collapse; width:100%; margin-top:20px; }
+th,td { border: 1px solid #ccc; padding: 8px; text-align:center; }
+th { background:#eee; }
+.high { background:#90ee90; }
+.mid { background:#ffd700; }
+.low { background:#ff6347; }
+input { width:100px; }
+</style>
+</head>
+<body>
+
+<h2>择偶条件匹配表</h2>
+
+<table id="matchTable">
+<thead>
+<tr>
+<th>条件</th><th>目标要求</th><th>候选人信息</th><th>匹配值</th><th>差异</th><th>建议</th>
+</tr>
+</thead>
+<tbody></tbody>
+<tfoot>
+<tr>
+<td colspan="3">总分</td><td id="totalScore">0</td><td colspan="2"></td>
+</tr>
+</tfoot>
+</table>
+
+<h3>输入候选人信息</h3>
+<form id="candidateForm">
+年龄: <input type="number" id="age" value="1990">  
+身高: <input type="number" id="height" value="170">  
+城市+房产: <input type="text" id="cityHouse" value="南京无房">  
+性格: <input type="text" id="personality" value="外向,活泼">  
+兴趣: <input type="text" id="interests" value="羽毛球,旅游">  
+婚史: <input type="text" id="marital" value="未婚">  
+<button type="button" onclick="calculateMatch()">计算匹配</button>
+</form>
+
+<script>
+const target={
+  age:1988,
+  height:175,
+  city:'南京',
+  hasHouse:true,
+  personality:'大方,包容',
+  interests:'羽毛球,旅游,悬疑电影',
+  marital:'未婚'
+};
+
+function calcScore(val, targetVal, type){
+  if(type==='age') return val>=targetVal?10:0;
+  if(type==='height') return Math.min(10, 10*val/targetVal);
+  return 0;
+}
+
+function keywordScore(targetStr, candStr){
+  const t=targetStr.split(',').map(s=>s.trim());
+  const c=candStr.split(',').map(s=>s.trim());
+  let match=0;
+  t.forEach(k=>{ if(c.includes(k)) match++; });
+  return t.length>0 ? match/t.length*10 : 0;
+}
+
+function calculateMatch(){
+  const cand={
+    age:parseInt(document.getElementById('age').value),
+    height:parseInt(document.getElementById('height').value),
+    cityHouse:document.getElementById('cityHouse').value,
+    personality:document.getElementById('personality').value,
+    interests:document.getElementById('interests').value,
+    marital:document.getElementById('marital').value
+  };
+  const tbody=document.querySelector('#matchTable tbody');
+  tbody.innerHTML='';
+
+  let total=0, weightSum=0;
+  const items=[
+    {name:'年龄', target:target.age, cand:cand.age, type:'age', weight:1},
+    {name:'身高', target:target.height, cand:cand.height, type:'height', weight:1},
+    {name:'城市+房产', target:target.city, cand:cand.cityHouse, type:'city', weight:1},
+    {name:'性格/价值观', target:target.personality, cand:cand.personality, type:'keyword', weight:1},
+    {name:'兴趣', target:target.interests, cand:cand.interests, type:'keyword', weight:1},
+    {name:'婚史', target:target.marital, cand:cand.marital, type:'keyword', weight:1},
+  ];
+
+  items.forEach(item=>{
+    let score=0, diff='', suggest='';
+    if(item.type==='age' || item.type==='height') score=calcScore(item.cand,item.target,item.type);
+    if(item.type==='keyword') score=keywordScore(item.target,item.cand);
+    if(item.name==='城市+房产'){
+      const hasHouse=item.cand.includes('有房');
+      score=(item.cand.includes('南京') && hasHouse)?10:(item.cand.includes('南京')?5:0);
+      diff=hasHouse?'':'房产不足';
+      suggest=hasHouse?'':'可考虑购房或说明情况';
+    }
+    if(item.name==='年龄' && item.cand<item.target){ diff='年龄低于目标'; suggest='可接受差异或说明情况'; }
+    if(item.name==='身高' && item.cand<item.target){ diff=`低${item.target-item.cand}cm`; suggest='可适当运动或接受差异'; }
+    if(item.name==='性格/价值观'){ diff=item.target!==item.cand?'部分匹配':''; suggest='了解彼此价值观差异'; }
+    if(item.name==='兴趣'){ diff=item.target!==item.cand?'兴趣不完全匹配':''; suggest='可尝试一起活动'; }
+    if(item.name==='婚史'){ diff=item.target!==item.cand?'不符':''; suggest=''; }
+
+    total+=score*item.weight; weightSum+=10*item.weight;
+
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${item.name}</td><td>${item.target}</td><td>${item.cand}</td><td class="${score>7?'high':score>4?'mid':'low'}">${score.toFixed(1)}</td><td>${diff}</td><td>${suggest}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  const totalScore=Math.round(total/weightSum*100);
+  document.getElementById('totalScore').innerText=totalScore;
+}
+</script>
+</body>
+</html>
